@@ -70,7 +70,10 @@ SYSTEM_PROMPT = (
     "and current seasonal conditions using your available tools.\n\n"
     "Always use your tools to look up plant-specific information before answering — "
     "don't rely on your general knowledge alone. If a plant isn't in your database, "
-    "say so clearly and offer general guidance based on what the user describes.\n\n"
+    "say so clearly and offer general guidance based on what the user describes. "
+    "Ask clarifying questions about the plant's appearance (leaf shape, color, growth pattern) "
+    "to help narrow down what it might be. If you recognize it, mention your best guess "
+    "but make clear that this is not confirmed by your database.\n\n"
     "Keep your advice practical and specific. Cite the source of your information "
     "when you have it (e.g., 'According to the care data for your monstera...')."
 )
@@ -86,8 +89,13 @@ SYSTEM_PROMPT = (
 def dispatch_tool(tool_name: str, tool_args: dict) -> str:
     """Route a tool call to the correct function and return the result as a JSON string."""
     print(f"  → Tool call: {tool_name}({tool_args})")
+    
+    # Ensure tool_args is a dict (handle None or empty string cases)
+    if not tool_args:
+        tool_args = {}
+    
     if tool_name == "lookup_plant":
-        result = lookup_plant(tool_args["plant_name"])
+        result = lookup_plant(tool_args.get("plant_name", ""))
     elif tool_name == "get_seasonal_conditions":
         result = get_seasonal_conditions(tool_args.get("season"))
     else:
@@ -128,4 +136,63 @@ def run_agent(user_message: str, history: list) -> str:
 
     Before writing code, complete specs/agent-loop-spec.md.
     """
-    return "🌱 Agent not yet implemented. Complete Milestone 2 to activate the Plant Advisor."
+    # Build the messages list: system prompt + history + current message
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    # Replay conversation history
+    for user_msg, assistant_msg in history:
+        messages.append({"role": "user", "content": user_msg})
+        if assistant_msg:
+            messages.append({"role": "assistant", "content": assistant_msg})
+    
+    # Add the current user message
+    messages.append({"role": "user", "content": user_message})
+    
+    # Tool-calling loop
+    tool_round = 0
+    response = None
+    
+    while tool_round < MAX_TOOL_ROUNDS:
+        # Call the LLM
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            tools=TOOL_DEFINITIONS,
+            tool_choice="auto",
+        )
+        
+        assistant_message = response.choices[0].message
+        
+        # Check if the LLM wants to call tools
+        if not assistant_message.tool_calls:
+            # No tool calls — LLM has its final answer; exit loop
+            break
+        
+        # Append the assistant message with tool calls
+        messages.append(assistant_message)
+        
+        # Execute each tool call and append the results
+        for tool_call in assistant_message.tool_calls:
+            tool_name = tool_call.function.name
+            tool_args = json.loads(tool_call.function.arguments)
+            tool_result = dispatch_tool(tool_name, tool_args)
+            
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result,
+            })
+        
+        tool_round += 1
+    
+    # Extract and return the final text response
+    final_response = response.choices[0].message.content if response else None
+    
+    if not final_response:
+        # Fallback message if response is None or empty
+        if tool_round >= MAX_TOOL_ROUNDS:
+            final_response = "I've reached the limit of tool calls for this query. Please try a simpler question."
+        else:
+            final_response = "I'd like to help, but I'm having trouble generating a response. Please try rephrasing your question."
+    
+    return final_response

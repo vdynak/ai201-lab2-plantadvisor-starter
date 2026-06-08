@@ -70,7 +70,15 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 *Aliases are stored as a list of strings. How will you check if the normalized input matches any alias in the list? Write your approach in pseudocode or plain English.*
 
 ```
-[your answer here]
+For each plant in the database:
+  Convert all aliases to lowercase: [alias.lower() for alias in plant["aliases"]]
+  If normalized_input is in this lowercased list: return the plant
+  
+This gives O(n) per plant for the list check, which is acceptable for ~15 plants.
+If the database grew to thousands, build a reverse index at module load:
+  alias_lookup = {alias.lower(): plant_key for plant_key, plant in _plant_db.items() for alias in plant["aliases"]}
+Then check: if normalized_input in alias_lookup: return _plant_db[alias_lookup[normalized_input]]
+This makes lookups O(1) regardless of database size.
 ```
 
 ---
@@ -80,7 +88,7 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 *When a plant isn't found, the agent will read your message and use it to decide what to tell the user. Write the exact string you'll return — make it useful to the agent, not just to a human reading logs.*
 
 ```
-[your answer here]
+f"Plant not found in database: '{name}'. Try searching by common name (e.g., 'pothos', 'snake plant'), scientific name (e.g., 'Epipremnum aureum'), or nickname (e.g., 'devil's ivy'). Ask the user for more details about the plant (color, leaf shape, size) if they're unsure of its name."
 ```
 
 ---
@@ -91,17 +99,17 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 
 **Test: does `"devil's ivy"` return the pothos entry?**
 ```
-[yes / no — if no, describe what happened]
+Yes — "devil's ivy" correctly matches the alias in the pothos entry and returns the full plant dict with display_name "Pothos".
 ```
 
 **Test: does `"SNAKE PLANT"` return the snake plant entry?**
 ```
-[yes / no — if no, describe what happened]
+Yes — case-insensitive matching works. "SNAKE PLANT" is normalized to "snake plant", which matches the display_name "Snake Plant" (lowercased for comparison), and returns the snake_plant entry.
 ```
 
 **One edge case you discovered while implementing:**
 ```
-[your answer here]
+Whitespace handling: "  mother-in-law's tongue  " (with leading/trailing spaces) correctly strips and matches the alias. The strip() call handles user input variations like accidental spaces before/after the plant name.
 ```
 
 ---
@@ -183,12 +191,13 @@ The full season dict from `_season_data`, plus a `detected_season` boolean. Exam
 
 **Test: does calling with `season=None` return the correct season for the current month?**
 ```
-Current month: [month]
-Expected season: [season]
-Returned season: [season]
+Current month: June (month 6)
+Expected season: Summer
+Returned season: Summer
+✓ Correct — _MONTH_TO_SEASON[6] correctly maps to "summer"
 ```
 
 **Test: does calling with `season="winter"` return winter data regardless of the current month?**
 ```
-[yes / no]
+Yes — When passing season="winter", detected_season is False (caller specified), and the winter dict is returned with all winter-specific guidance (watering, fertilizing, pests, etc.) regardless of the current month being June.
 ```

@@ -122,7 +122,24 @@ for tool_call in assistant_message.tool_calls:
 *The loop should stop when: (a) the LLM returns a response with no tool calls, OR (b) the MAX_TOOL_ROUNDS limit is reached. Describe how you will detect each condition and what you will return in each case.*
 
 ```
-[your answer here]
+**Condition A: No tool calls**
+- Detect: Check if `assistant_message.tool_calls` is falsy (None or empty list)
+- Action: Break from the loop immediately
+- Return: Extract `response.choices[0].message.content` and return it
+  - If content is None/empty, return fallback: "I'd like to help, but I'm having trouble generating a response. Please try rephrasing your question."
+
+**Condition B: MAX_TOOL_ROUNDS reached**
+- Detect: Track iteration count in while loop condition: `while tool_round < MAX_TOOL_ROUNDS`
+- Action: Exit loop naturally when tool_round reaches MAX_TOOL_ROUNDS
+- Return: Extract `response.choices[0].message.content` from the last response
+  - The last response may have tool_calls that we didn't execute (due to hitting limit)
+  - Still extract and return its content field
+  - If content is None/empty, return fallback: "I've reached the limit of tool calls for this query. Please try a simpler question."
+
+**Edge case handling:**
+- Both empty string and None are treated as missing content → need fallback
+- Response object is guaranteed to exist before extraction (loop runs at least once with MAX_TOOL_ROUNDS=5)
+- Never return an empty string — always have a fallback message ready
 ```
 
 ---
@@ -132,7 +149,21 @@ for tool_call in assistant_message.tool_calls:
 *Once the loop exits because there are no more tool calls, how do you extract the text content from the response object? What field holds the string you should return?*
 
 ```
-[your answer here]
+The response object structure:
+  response.choices[0]              → The first (only) choice
+  response.choices[0].message      → The assistant message object
+  response.choices[0].message.content  → The text response string
+
+Extraction:
+  final_response = response.choices[0].message.content
+
+Fallback (for None or empty string):
+  if not final_response:
+      final_response = "I'd like to help, but I'm having trouble generating a response. Please try rephrasing your question."
+  
+  (Use a different fallback for MAX_TOOL_ROUNDS condition if desired)
+
+Return the string directly — never return None or empty string per the output contract.
 ```
 
 ---
@@ -144,20 +175,41 @@ for tool_call in assistant_message.tool_calls:
 **Trace of a working agent turn (what tools were called and in what order):**
 
 ```
-Query: "How should I care for my calathea?"
-Round 1 tool call: [tool name, args]
-Round 2 tool call: [tool name, args] (if any)
-Final response: [brief description]
+Query: "How do I care for my pothos?"
+Round 1 tool call: lookup_plant({"plant_name": "pothos"})
+Result: Returns full pothos plant data including watering (1-2 weeks), light (low to bright indirect), humidity, temperature, and common issues
+Final response: Agent provides specific care instructions based on the plant data
+
+Query: "How often should I water my snake plant in winter?"
+Round 1 tool call: lookup_plant({"plant_name": "snake plant"})
+Result: Returns snake plant data showing watering frequency "every 2-6 weeks depending on season"
+Round 2 tool call: get_seasonal_conditions({"season": "winter"})
+Result: Returns winter guidance including "Water once a month or less" for the season
+Final response: Agent combines both pieces of information to give specific winter watering advice
+
+Query: "My calathea has brown edges. What should I do?"
+Round 1 tool call: lookup_plant({"plant_name": "calathea"})
+Result: Returns calathea data including common issues and humidity sensitivity
+Final response: Agent identifies mineral buildup or humidity issues based on plant data
 ```
 
 **What happens when you ask about a plant that isn't in the database?**
 
 ```
-[describe the behavior you observed]
+When lookup_plant returns {"found": false, "name": "banana plant", "message": "Plant not found in database..."},
+the agent reads this message and generates a helpful response explaining that the plant isn't in the database.
+It then offers to provide general guidance based on the user's description of the plant (color, leaf shape, size).
+The agent gracefully falls back to general knowledge rather than making up plant data.
 ```
 
 **One thing about the tool call API that surprised you:**
 
 ```
-[your answer here]
+The LLM can decide whether to call tools at all - even with tools available,
+if the LLM determines it has enough information to answer, it will respond directly
+without calling tools. For example, a very general question might get answered
+from the model's training data without consulting the database.
+Additionally, the tool_calls field is None (not an empty list) when there are no tool calls,
+so checking "if not assistant_message.tool_calls" is the right way to detect when
+the loop should exit.
 ```

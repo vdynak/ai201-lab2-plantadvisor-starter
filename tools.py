@@ -52,10 +52,29 @@ def lookup_plant(plant_name: str) -> dict:
 
     Before writing code, complete the lookup_plant section of specs/tool-functions-spec.md.
     """
+    # Normalize the input: strip whitespace and convert to lowercase
+    normalized = plant_name.strip().lower()
+    
+    # 1. Direct key match (fastest)
+    if normalized in _plant_db:
+        return {"found": True, "plant": _plant_db[normalized]}
+    
+    # 2. Display name match
+    for key, plant in _plant_db.items():
+        if plant["display_name"].lower() == normalized:
+            return {"found": True, "plant": plant}
+    
+    # 3. Alias match (broadest)
+    for key, plant in _plant_db.items():
+        lowercased_aliases = [alias.lower() for alias in plant["aliases"]]
+        if normalized in lowercased_aliases:
+            return {"found": True, "plant": plant}
+    
+    # Not found - return helpful message for the agent
     return {
         "found": False,
         "name": plant_name,
-        "message": "Plant lookup not yet implemented. Complete Milestone 1.",
+        "message": f"Plant not found in database: '{plant_name}'. Provide general guidance based on what the user describes (their observation of the plant, its appearance, growing conditions). Consider asking: What does it look like? (trailing stems, thick leaves, etc.) What color are the leaves? How does the user currently care for it? Use this information to offer general succulent, trailing plant, or foliage plant care advice as appropriate. If you recognize what the plant might be, mention your best guess and say it's not confirmed in your data.",
     }
 
 
